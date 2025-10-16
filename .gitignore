@@ -1,0 +1,24 @@
+# Ignore dataset and notebooks
+data/
+notebooks/
+
+# Ignore Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Optional: ignore backup folder inside data if present
+data/backup/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+.env
+
+# Editor directories
+.vscode/
+.idea/
