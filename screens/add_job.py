@@ -15,10 +15,12 @@ def render():
     # --- Basic Info ---
     job_name = st.text_input("Job Name", placeholder="e.g., Daily_Sales_Extract")
 
-    uploaded_file = st.file_uploader("Select Script File", type=["py", "bat"])
-    file_path = uploaded_file.name if uploaded_file else None
+    # uploaded_file = st.file_uploader("Select Script File", type=["py", "bat"])
+    # file_path = uploaded_file.name if uploaded_file else None
+    file_path = st.text_input("📂 Script Path", placeholder="Paste full absolute path, e.g. C:\\Users\\Erica\\script.py")
+
     if file_path:
-        file_path = os.path.abspath(file_path)
+        # file_path = os.path.abspath(file_path)
         st.info(f"📁 File path: {file_path}")
 
     st.divider()

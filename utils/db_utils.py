@@ -89,3 +89,21 @@ class DbOps:
         session.commit()
         session.close()
         return count
+
+    def delete_records(self, model_class, filters):
+        """
+        Generic DELETE function.
+        - model_class: SQLAlchemy model class (e.g., Job)
+        - filters: dict of column-value pairs for WHERE clause
+        Returns: number of rows deleted
+        """
+        session = get_session(self._db_path)
+        query = session.query(model_class)
+
+        for col, val in filters.items():
+            query = query.filter(getattr(model_class, col) == val)
+
+        count = query.delete(synchronize_session=False)
+        session.commit()
+        session.close()
+        return count
