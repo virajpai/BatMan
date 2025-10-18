@@ -1,4 +1,7 @@
 import streamlit as st
+from datetime import datetime, timedelta
+import calendar
+import re
 
 def format_arg(key, value, arg_type=None):
     """Return formatted CLI argument string like -f data.csv or --file data.csv."""
@@ -24,3 +27,51 @@ def get_arg_value(arg_type):
                 option = f"T - {n}"
         return option, format_display
     return None, ""
+
+def resolve_date_placeholders(text: str) -> str:
+    """
+    Replaces all supported date placeholders inside a string with actual date values.
+
+    Supported placeholders (case-sensitive):
+    ----------------------------------------
+    ##Previous Month##      → 'YYYYMM' (last month)
+    ##Current Month##       → 'YYYYMM' (current month)
+    ##Previous Month End##  → 'YYYYMMDD' (last day of previous month)
+    ##T - N##               → 'YYYYMMDD' (today minus N days)
+
+    Example:
+    --------
+    "--save --date ##Previous Month## --params file.json"
+    → "--save --date 202509 --params file.json"
+    """
+    today = datetime.today()
+
+    def replace_placeholder(match):
+        placeholder = match.group(0)
+
+        if placeholder == "##Previous Month##":
+            year = today.year if today.month > 1 else today.year - 1
+            month = today.month - 1 if today.month > 1 else 12
+            return f"{year}{month:02d}"
+
+        elif placeholder == "##Current Month##":
+            return today.strftime("%Y%m")
+
+        elif placeholder == "##Previous Month End##":
+            year = today.year if today.month > 1 else today.year - 1
+            month = today.month - 1 if today.month > 1 else 12
+            last_day = calendar.monthrange(year, month)[1]
+            return f"{year}{month:02d}{last_day:02d}"
+
+        elif placeholder.startswith("##T -"):
+            n_match = re.search(r"T\s*-\s*(\d+)", placeholder)
+            if n_match:
+                n = int(n_match.group(1))
+                target_date = today - timedelta(days=n)
+                return target_date.strftime("%Y%m%d")
+
+        return placeholder  # Leave unmodified if pattern not recognized
+
+    # Pattern to match all supported placeholders
+    pattern = r"##(?:Previous Month End|Previous Month|Current Month|T\s*-\s*\d+)##"
+    return re.sub(pattern, replace_placeholder, text)
