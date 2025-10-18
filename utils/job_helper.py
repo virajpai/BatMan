@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime, timedelta
 import calendar
 import re
+import os
 
 def format_arg(key, value, arg_type=None):
     """Return formatted CLI argument string like -f data.csv or --file data.csv."""
@@ -75,3 +76,24 @@ def resolve_date_placeholders(text: str) -> str:
     # Pattern to match all supported placeholders
     pattern = r"##(?:Previous Month End|Previous Month|Current Month|T\s*-\s*\d+)##"
     return re.sub(pattern, replace_placeholder, text)
+
+def run(script_path: str, command: str):
+    """
+    Run a job with the given job ID.
+    """
+    
+    print(rf"Executing script at: {script_path} with command: {command}")
+    
+    # Save current working directory
+    # parent_dir = os.path.dirname(rf"{script_path}")
+    cwd = os.getcwd()
+    # os.chdir(parent_dir)  # run from parent directory
+    try:
+        # Dummy implementation of job execution
+        st.write(f"Running job... --> {command}")
+        # Here you would add the actual job execution logic
+    finally:
+        # Restore working directory
+        os.chdir(cwd)
+        
+    return "success"
