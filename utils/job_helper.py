@@ -4,6 +4,9 @@ import calendar
 import re
 import os
 
+from utils.db_utils import DbOps
+from utils.db_models import Schedule
+
 def format_arg(key, value, arg_type=None):
     """Return formatted CLI argument string like -f data.csv or --file data.csv."""
     prefix = f"-{key}" if len(key) == 1 else f"--{key}"
@@ -97,3 +100,38 @@ def run(script_path: str, command: str):
         os.chdir(cwd)
         
     return "success"
+
+
+def save_schedule(schedule_id: int | None, schedule_name: str, job_id: int, schedule_type: str, run_option: str, run_time: str, created_by: str = "system"):
+    """
+    Save or update a job schedule.
+    If schedule_id is provided → update the record, else insert new.
+    """
+    db = DbOps()
+    hour, minute = run_time.split(":")
+
+    data = {
+        "schedule_name": schedule_name,
+        "job_id": job_id,
+        "schedule_type": schedule_type,
+        "run_option": run_option,
+        "hour": hour,
+        "minute": minute,
+        "modified_at": datetime.utcnow(),
+        "modified_by": created_by,
+    }
+
+    if schedule_id:
+        updated = db.update_records(Schedule, filters={"id": schedule_id}, updates=data)
+        if updated > 0:
+            return {"status": "success", "message": f"✅ Schedule '{schedule_name}' updated successfully."}
+        else:
+            return {"status": "error", "message": "⚠️ Failed to update schedule."}
+    else:
+        data["created_at"] = datetime.utcnow()
+        data["created_by"] = created_by
+        inserted = db.insert_record(Schedule, data)
+        if inserted > 0:
+            return {"status": "success", "message": f"✅ Schedule '{schedule_name}' added successfully."}
+        else:
+            return {"status": "error", "message": "⚠️ Failed to add schedule."}

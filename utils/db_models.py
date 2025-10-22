@@ -1,11 +1,10 @@
 import os
-import enum
 from datetime import datetime
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, JSON
+    create_engine, Column, Integer, String, DateTime, JSON, ForeignKey
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 
 Base = declarative_base()
 
@@ -25,8 +24,36 @@ class Job(Base):
     modified_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     modified_by = Column(String(100), default="system")
 
+    schedules = relationship("Schedule", back_populates="job", cascade="all, delete-orphan")
+
     def __repr__(self):
-        return f"<Job(id={self.id}, name='{self.name}', type={self.script_type.value})>"
+        return f"<Job(id={self.id}, name='{self.name}', type={self.script_type})>"
+
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_name = Column(String(255), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    schedule_type = Column(String(50), nullable=False)   # Monthly, Weekly, Daily
+    run_option = Column(String(50), nullable=False)      # Month-end, BD1, Monday, etc.
+    hour = Column(String(2), nullable=False)
+    minute = Column(String(2), nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(100), default="system")
+
+    modified_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    modified_by = Column(String(100), default="system")
+
+    job = relationship("Job", back_populates="schedules")
+
+    def __repr__(self):
+        return (
+            f"<Schedule(id={self.id}, name='{self.schedule_name}', "
+            f"job_id={self.job_id}, type={self.schedule_type}, option={self.run_option})>"
+        )
 
 
 # --- Database setup ---
