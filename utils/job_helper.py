@@ -88,13 +88,15 @@ def run(script_path: str, command: str):
     print(rf"Executing script at: {script_path} with command: {command}")
     
     # Save current working directory
-    # parent_dir = os.path.dirname(rf"{script_path}")
+    parent_dir = os.path.dirname(rf"{script_path}")
     cwd = os.getcwd()
-    # os.chdir(parent_dir)  # run from parent directory
     try:
-        # Dummy implementation of job execution
+        # Change to the script's parent directory
+        print('Chaning working directory to:', parent_dir)
+        os.chdir(parent_dir)  # run from parent directory
         st.write(f"Running job... --> {command}")
-        # Here you would add the actual job execution logic
+        os.system(command)
+        print("Job execution completed.")
     finally:
         # Restore working directory
         os.chdir(cwd)
