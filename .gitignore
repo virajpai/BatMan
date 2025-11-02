@@ -1,6 +1,7 @@
 # Ignore dataset and notebooks
 /data/**
 /notebooks/**
+/logs/**
 
 # Ignore Jupyter checkpoints
 .ipynb_checkpoints/

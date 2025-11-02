@@ -56,6 +56,33 @@ class Schedule(Base):
         )
 
 
+class Run(Base):
+    __tablename__ = "runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    schedule_id = Column(Integer, ForeignKey("schedules.id"), nullable=True)
+    run_type = Column(String(20), nullable=False, default="Manual")  # Manual / Scheduled
+    status = Column(String(20), nullable=False, default="Pending")   # Pending / Running / Success / Failed
+    start_time = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True)
+    exit_code = Column(Integer, nullable=True)
+    error_message = Column(String(2000), nullable=True)
+    log_path = Column(String(1000), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(100), default="system")
+
+    job = relationship("Job", backref="runs")
+    schedule = relationship("Schedule", backref="runs")
+
+    def __repr__(self):
+        return (
+            f"<Run(id={self.id}, job_id={self.job_id}, type={self.run_type}, "
+            f"status={self.status}, start={self.start_time}, end={self.end_time})>"
+        )
+
+
 # --- Database setup ---
 def get_engine(db_path="sqlite:///scheduler.db"):
     """Return a SQLAlchemy engine for SQLite DB."""

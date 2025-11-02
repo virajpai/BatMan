@@ -1,0 +1,9 @@
+# services/config.yaml
+poll_interval_seconds: 30        # how often daemon scans schedules
+db_path: "sqlite:///data/scheduler.db"
+max_workers: 4                   # concurrency: max number of concurrent job runs
+retry_attempts: 2                # default retry attempts for failed jobs
+retry_backoff_seconds: 60        # initial backoff (exponential)
+log_file: "logs/scheduler.log"
+log_level: "INFO"
+record_stdout_max_chars: 2000    # store partial stdout/err in DB
