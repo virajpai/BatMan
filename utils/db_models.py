@@ -36,7 +36,7 @@ class Schedule(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     schedule_name = Column(String(255), nullable=False)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
-    schedule_type = Column(String(50), nullable=False)   # Monthly, Weekly, Daily
+    schedule_type = Column(String(50), nullable=False)   # Monthly, Weekly, Daily, Inactive
     run_option = Column(String(50), nullable=False)      # Month-end, BD1, Monday, etc.
     hour = Column(String(2), nullable=False)
     minute = Column(String(2), nullable=False)
@@ -46,6 +46,7 @@ class Schedule(Base):
 
     modified_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     modified_by = Column(String(100), default="system")
+    last_run_at = Column(DateTime, nullable=True)
 
     job = relationship("Job", back_populates="schedules")
 

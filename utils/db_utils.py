@@ -33,7 +33,11 @@ class DbOps:
         # Apply filters
         if filters:
             for col, val in filters.items():
-                query = query.filter(getattr(model_class, col) == val)
+                if val and str(val).startswith('~'):
+                    # Not equal filter
+                    query = query.filter(getattr(model_class, col) != val[1:])
+                else:
+                    query = query.filter(getattr(model_class, col) == val)
 
         # Select specific columns
         if columns:

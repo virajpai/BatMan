@@ -7,3 +7,4 @@ retry_backoff_seconds: 60        # initial backoff (exponential)
 log_file: "logs/scheduler.log"
 log_level: "INFO"
 record_stdout_max_chars: 2000    # store partial stdout/err in DB
+timezone: "timezone.utc"         # timezone for scheduling jobs

@@ -18,7 +18,7 @@ import signal
 import logging
 import calendar
 import traceback
-from datetime import datetime, timedelta, date
+from datetime import datetime, timezone, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from logging.handlers import RotatingFileHandler
 from typing import List, Dict, Any, Optional
@@ -80,7 +80,7 @@ def last_day_of_month(year: int, month: int) -> date:
     return date(year, month, last_day)
 
 
-def should_run_schedule(schedule_row: Dict[str, Any], now: datetime) -> bool:
+def should_run_schedule(schedule_row: Dict[str, Any], now: datetime, logger, interval=60) -> bool:
     """
     Decide whether a schedule (DB row) should run at the 'now' timestamp.
     schedule_row fields: schedule_type, run_option, hour, minute
@@ -89,10 +89,19 @@ def should_run_schedule(schedule_row: Dict[str, Any], now: datetime) -> bool:
     option = schedule_row.get("run_option")
     hour = int(schedule_row.get("hour", 0))
     minute = int(schedule_row.get("minute", 0))
+    last_run = schedule_row.get("last_run_at", None)
 
     # Time must match hour and minute
     if now.hour != hour or now.minute != minute:
         return False
+
+    # The last run check: prevent multiple runs within 'interval' seconds
+    if last_run:
+        delta = now - last_run
+        logger.info(f"Schedule ID {schedule_row.get('id')} last run at {last_run}, delta seconds: {delta.total_seconds()}")
+        # prevent multiple runs within same minute
+        if delta.total_seconds() <= interval:
+            return False
 
     if stype == "Daily":
         if option == "All Days":
@@ -144,8 +153,8 @@ class DB:
         """
         Returns list of schedule dicts with necessary fields.
         """
-        cols = ["id", "schedule_name", "job_id", "schedule_type", "run_option", "hour", "minute"]
-        df = self.dbops.select_records(Schedule, filters=None, columns=cols)
+        cols = ["id", "schedule_name", "job_id", "schedule_type", "run_option", "hour", "minute", "last_run_at"]
+        df = self.dbops.select_records(Schedule, filters={'schedule_type': '~Inactive'}, columns=cols)
         # convert DataFrame to list of dicts
         return df.to_dict(orient="records") if not df.empty else []
 
@@ -161,6 +170,9 @@ class DB:
 
     def update_run(self, filters: Dict[str, Any], updates: Dict[str, Any]) -> int:
         return self.dbops.update_records(Run, filters=filters, updates=updates)
+
+    def update_schedule_last_run(self, schedule_id: int, run_time: datetime) -> int:
+        return self.dbops.update_records(Schedule, filters={"id": schedule_id}, updates={"last_run_at": run_time})
 
 
 # ---------------------------
@@ -215,7 +227,7 @@ def resolve_placeholders_in_args(args_value):
     return str(args_value)
 
 
-def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], attempts: int = 0, max_attempts: int = 1, backoff: int = 60, logger: logging.Logger = None):
+def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], attempts: int = 0, max_attempts: int = 1, backoff: int = 60, logger: logging.Logger = None, _timezone=timezone.utc) -> Dict[str, Any]:
     """
     Execute the job (subprocess), create Run record, update status, support retries.
     This function runs in a worker thread.
@@ -228,8 +240,8 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
         "schedule_id": schedule_id,
         "run_type": "Scheduled" if schedule_id else "Manual",
         "status": "Running",
-        "start_time": datetime.utcnow(),
-        "created_at": datetime.utcnow(),
+        "start_time": datetime.now(_timezone),
+        "created_at": datetime.now(_timezone),
         "created_by": "scheduler_daemon",
     }
 
@@ -267,21 +279,22 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
         status = "Success" if exit_code == 0 else "Failed"
         updates = {
             "status": status,
-            "end_time": datetime.utcnow(),
+            "end_time": datetime.now(_timezone),
             "exit_code": exit_code,
             "error_message": (stderr_text[:2000] if stderr_text else None),
             "log_path": None,
-            "modified_by": "scheduler_daemon",
-            "modified_at": datetime.utcnow(),
+            # "modified_by": "scheduler_daemon",
+            # "modified_at": datetime.now(_timezone),
         }
         db.update_run(filters={"id": run_id}, updates=updates)
+        db.update_schedule_last_run(schedule_id, datetime.now(_timezone))
         logger.info(f"Finished job_id={job_id} run_id={run_id} status={status} exit={exit_code}")
 
         if status == "Failed" and attempts + 1 < max_attempts:
             # schedule retry with backoff (synchronous here; the caller could implement async scheduling)
             logger.warning(f"Job failed, will retry (attempt {attempts + 1}/{max_attempts}) after {backoff} seconds")
             time.sleep(backoff)
-            return run_job_process(db, job, schedule_row, attempts=attempts + 1, max_attempts=max_attempts, backoff=backoff * 2, logger=logger)
+            return run_job_process(db, job, schedule_row, attempts=attempts + 1, max_attempts=max_attempts, backoff=backoff * 2, logger=logger, _timezone=_timezone)
 
         return {"status": status, "exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text}
 
@@ -289,14 +302,15 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
         logger.exception("Exception while running job_id=%s: %s", job_id, e)
         updates = {
             "status": "Failed",
-            "end_time": datetime.utcnow(),
+            "end_time": datetime.now(_timezone),
             "exit_code": -1,
             "error_message": str(e)[:2000],
             "modified_by": "scheduler_daemon",
-            "modified_at": datetime.utcnow(),
+            "modified_at": datetime.now(_timezone),
         }
         try:
             db.update_run(filters={"id": run_id}, updates=updates)
+            db.update_schedule_last_run(schedule_id, datetime.now(_timezone))
         except Exception:
             logger.exception("Failed to update run record after crash.")
         return {"status": "error", "message": str(e)}
@@ -314,6 +328,7 @@ class SchedulerDaemon:
         self.max_workers = int(self.cfg.get("max_workers", 4))
         self.retry_attempts = int(self.cfg.get("retry_attempts", 2))
         self.retry_backoff_seconds = int(self.cfg.get("retry_backoff_seconds", 60))
+        self.timezone = eval(self.cfg.get("timezone", "timezone.utc"))
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
         self._stop = False
 
@@ -325,12 +340,12 @@ class SchedulerDaemon:
 
         try:
             while not self._stop:
-                now = datetime.now()
+                now = datetime.now(self.timezone)
                 try:
                     schedules = self.db.get_active_schedules()
                     if schedules:
                         # find schedules that should run in this minute
-                        to_run = [s for s in schedules if should_run_schedule(s, now)]
+                        to_run = [s for s in schedules if should_run_schedule(s, now, self.logger)]
                         if to_run:
                             self.logger.info(f"Found {len(to_run)} schedule(s) to run at {now}.")
                         futures = []
@@ -349,7 +364,8 @@ class SchedulerDaemon:
                                 0,
                                 self.retry_attempts,
                                 self.retry_backoff_seconds,
-                                self.logger
+                                self.logger,
+                                self.timezone
                             )
                             futures.append(fut)
 

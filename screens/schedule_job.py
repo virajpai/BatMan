@@ -134,8 +134,8 @@ def render():
         # --- Schedule type and options ---
         schedule_type = st.selectbox(
             "Schedule Type",
-            ["Monthly", "Weekly", "Daily"],
-            index=["Monthly", "Weekly", "Daily"].index(selected.get("schedule_type", "Monthly"))
+            ["Monthly", "Weekly", "Daily", "Inactive"],
+            index=["Monthly", "Weekly", "Daily", "Inactive"].index(selected.get("schedule_type", "Monthly"))
         )
 
         prev_option = selected.get("run_option") if selected else None
@@ -148,11 +148,13 @@ def render():
             weekly_options = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
             run_option = st.selectbox("Run Option", weekly_options,
                                       index=safe_index(weekly_options, prev_option, default=0))
-        else:  # Daily
+        elif schedule_type == "Daily":
             daily_options = ["Weekdays Only", "All Days"]
             run_option = st.selectbox("Run Option", daily_options,
                                       index=safe_index(daily_options, prev_option, default=0))
-
+        else:  # Inactive
+            run_option = "N/A"
+        
         # --- Time selection ---
         col1, col2 = st.columns(2)
         hour = col1.selectbox("Hour (00-23)", [f"{i:02d}" for i in range(24)],
