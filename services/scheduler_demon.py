@@ -97,7 +97,7 @@ def should_run_schedule(schedule_row: Dict[str, Any], now: datetime, logger, int
 
     # The last run check: prevent multiple runs within 'interval' seconds
     if last_run:
-        delta = now - last_run
+        delta = now - last_run.replace(tzinfo=now.tzinfo)
         logger.info(f"Schedule ID {schedule_row.get('id')} last run at {last_run}, delta seconds: {delta.total_seconds()}")
         # prevent multiple runs within same minute
         if delta.total_seconds() <= interval:
@@ -234,6 +234,17 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
     """
     logger = logger or logging.getLogger("scheduler_daemon")
     schedule_id = schedule_row.get("id")
+    schedule_name = schedule_row.get("schedule_name", "manual_run")
+
+    # --- Prepare log directory ---
+    log_dir = os.path.join("logs", "run_logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # --- Log file name ---
+    ts = datetime.now(_timezone).strftime("%Y%m%d_%H%M%S")
+    safe_name = schedule_name.replace(" ", "_").replace("/", "_")
+    log_file = os.path.join(log_dir, f"{safe_name}_{ts}.log")
+
     job_id = job["id"]
     run_payload = {
         "job_id": job_id,
@@ -243,6 +254,7 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
         "start_time": datetime.now(_timezone),
         "created_at": datetime.now(_timezone),
         "created_by": "scheduler_daemon",
+        "log_path": log_file,
     }
 
     # Insert run entry (note: DbOps.insert_record returns count of inserted rows)
@@ -277,12 +289,25 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
         exit_code = proc.returncode
 
         status = "Success" if exit_code == 0 else "Failed"
+        # --- Write everything to log file ---
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write("=== COMMAND ===\n")
+            f.write(" ".join(cmd) + "\n\n")
+            f.write("=== START TIME ===\n")
+            f.write(str(run_payload["start_time"]) + "\n\n")
+            f.write("=== STDOUT ===\n")
+            f.write(stdout_text + "\n\n")
+            f.write("=== STDERR ===\n")
+            f.write(stderr_text + "\n\n")
+            f.write("=== EXIT CODE ===\n")
+            f.write(str(exit_code) + "\n")
+
         updates = {
             "status": status,
             "end_time": datetime.now(_timezone),
             "exit_code": exit_code,
             "error_message": (stderr_text[:2000] if stderr_text else None),
-            "log_path": None,
+            "log_path": log_file,
             # "modified_by": "scheduler_daemon",
             # "modified_at": datetime.now(_timezone),
         }
@@ -296,7 +321,7 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
             time.sleep(backoff)
             return run_job_process(db, job, schedule_row, attempts=attempts + 1, max_attempts=max_attempts, backoff=backoff * 2, logger=logger, _timezone=_timezone)
 
-        return {"status": status, "exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text}
+        return {"status": status, "exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text, "log_file": log_file}
 
     except Exception as e:
         logger.exception("Exception while running job_id=%s: %s", job_id, e)
@@ -305,14 +330,24 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
             "end_time": datetime.now(_timezone),
             "exit_code": -1,
             "error_message": str(e)[:2000],
-            "modified_by": "scheduler_daemon",
-            "modified_at": datetime.now(_timezone),
+            "log_path": log_file,
+            # "modified_by": "scheduler_daemon",
+            # "modified_at": datetime.now(_timezone),
         }
         try:
             db.update_run(filters={"id": run_id}, updates=updates)
             db.update_schedule_last_run(schedule_id, datetime.now(_timezone))
         except Exception:
             logger.exception("Failed to update run record after crash.")
+
+                # Write crash to log too
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write("\n=== CRASH ===\n")
+                f.write(str(e) + "\n")
+        except:
+            pass
+        
         return {"status": "error", "message": str(e)}
 
 
