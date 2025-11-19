@@ -5,7 +5,8 @@ import re
 import os
 
 from utils.db_utils import DbOps
-from utils.db_models import Schedule
+from utils.db_models import Schedule, Run
+import subprocess
 
 def format_arg(key, value, arg_type=None):
     """Return formatted CLI argument string like -f data.csv or --file data.csv."""
@@ -80,28 +81,123 @@ def resolve_date_placeholders(text: str) -> str:
     pattern = r"##(?:Previous Month End|Previous Month|Current Month|T\s*-\s*\d+)##"
     return re.sub(pattern, replace_placeholder, text)
 
+# def run(script_path: str, command: str):
+#     """
+#     Run a job with the given job ID.
+#     """
+    
+#     print(rf"Executing script at: {script_path} with command: {command}")
+    
+#     # Save current working directory
+#     parent_dir = os.path.dirname(rf"{script_path}")
+#     cwd = os.getcwd()
+#     try:
+#         # Change to the script's parent directory
+#         print('Chaning working directory to:', parent_dir)
+#         os.chdir(parent_dir)  # run from parent directory
+#         st.write(f"Running job... --> {command}")
+#         os.system(command)
+#         print("Job execution completed.")
+#     finally:
+#         # Restore working directory
+#         os.chdir(cwd)
+        
+#     return "success"
+
 def run(script_path: str, command: str):
     """
     Run a job with the given job ID.
+    Minimal changes:
+    - capture stdout into log file
+    - insert run entry into DB
     """
-    
+
     print(rf"Executing script at: {script_path} with command: {command}")
-    
+
+    # ------------------------------
+    # Setup log file
+    # ------------------------------
+    os.makedirs("logs/run_logs", exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_name = os.path.splitext(os.path.basename(script_path))[0]
+    log_file = f"logs/run_logs/{job_name}_{timestamp}.log"
+
+    # ------------------------------
+    # Insert DB start record
+    # ------------------------------
+    dbo = DbOps()
+    run_id = dbo.insert_record(
+        "runs",
+        {
+            "schedule_name": job_name,
+            "run_type": "manual",
+            "status": "running",
+            "start_time": datetime.now(),
+            "end_time": None,
+            "log_file": log_file
+        }
+    )
+
     # Save current working directory
     parent_dir = os.path.dirname(rf"{script_path}")
     cwd = os.getcwd()
+
     try:
-        # Change to the script's parent directory
         print('Chaning working directory to:', parent_dir)
         os.chdir(parent_dir)  # run from parent directory
-        st.write(f"Running job... --> {command}")
-        os.system(command)
-        print("Job execution completed.")
+
+        # ------------------------------
+        # Run and stream logs
+        # ------------------------------
+        with open(log_file, "w") as logf:
+            logf.write(f"=== Job Started at {timestamp} ===\n")
+            logf.write(f"Command: {command}\n\n")
+
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True
+            )
+
+            for line in process.stdout:
+                logf.write(line)
+
+            process.wait()
+
+            if process.returncode == 0:
+                status = "success"
+                logf.write("\nJob completed successfully.\n")
+            else:
+                status = "failed"
+                logf.write(f"\nJob failed with exit code {process.returncode}\n")
+
+    except Exception as e:
+        status = "failed"
+        with open(log_file, "a") as logf:
+            logf.write(f"\nERROR: {str(e)}\n")
+
     finally:
         # Restore working directory
         os.chdir(cwd)
-        
+
+        # ------------------------------
+        # Update DB end record
+        # ------------------------------
+        dbo.update_records(
+            "runs",
+            run_id,
+            {
+                "status": status,
+                "end_time": datetime.now()
+            }
+        )
+
+    print("Job execution completed.")
     return "success"
+
 
 
 def save_schedule(schedule_id: int | None, schedule_name: str, job_id: int, schedule_type: str, run_option: str, run_time: str, created_by: str = "system"):

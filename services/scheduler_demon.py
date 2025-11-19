@@ -233,7 +233,7 @@ def run_job_process(db: DB, job: Dict[str, Any], schedule_row: Dict[str, Any], a
     This function runs in a worker thread.
     """
     logger = logger or logging.getLogger("scheduler_daemon")
-    schedule_id = schedule_row.get("id")
+    schedule_id = schedule_row.get("id", None)
     schedule_name = schedule_row.get("schedule_name", "manual_run")
 
     # --- Prepare log directory ---
